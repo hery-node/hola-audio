@@ -1,0 +1,60 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# PyInstaller
+*.spec.bak
+*.manifest
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# Model cache
+models/
+*.nemo
+*.ckpt
+*.pt
+*.bin
+*.safetensors
+
+# Audio data (user recordings)
+data/recordings/
+data/finetune/
+
+# Config with secrets
+config/local.yaml
+
+# Logs
+*.log
+logs/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/

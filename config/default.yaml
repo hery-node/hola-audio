@@ -1,0 +1,73 @@
+# Application settings
+app:
+  name: "Hola Audio"
+  version: "0.1.0"
+  log_level: "INFO" # DEBUG, INFO, WARNING, ERROR
+
+# Audio capture settings
+audio:
+  sample_rate: 16000 # Required by Canary-Qwen (16kHz mono)
+  channels: 1 # Mono audio
+  dtype: "float32" # Audio sample format
+  max_duration: 120 # Maximum recording duration in seconds
+  silence_threshold: 0.01 # RMS threshold for silence detection
+  silence_duration: 3.0 # Seconds of silence before auto-stop (0 = disabled)
+  output_dir: "" # Empty = use platformdirs default
+
+# Hotkey settings
+hotkey:
+  toggle_recording: "<ctrl>+<shift>+h" # Start/stop recording
+  cancel_recording: "<escape>" # Cancel current recording
+  correct_clipboard: "<ctrl>+<shift>+j" # Correct text in clipboard
+
+# ASR engine settings
+asr:
+  model_name: "nvidia/canary-qwen-2.5b" # HuggingFace model identifier
+  device: "auto" # auto, cuda, cpu
+  compute_type: "float16" # float16, float32, bfloat16
+  max_new_tokens: 512 # Maximum tokens for transcription
+  batch_size: 1 # Batch size for inference
+  beam_size: 1 # Beam search size (1 = greedy)
+  prompt: "Transcribe the following:"
+
+# Fine-tuning settings
+finetune:
+  mode: "offline" # offline, online
+  output_dir: "" # Empty = use platformdirs default
+  # Offline fine-tuning parameters
+  offline:
+    learning_rate: 1.0e-4
+    num_epochs: 5
+    batch_size: 4
+    lora_rank: 8
+    lora_alpha: 16
+    max_steps: 200
+  # Online fine-tuning endpoint
+  online:
+    endpoint: "https://api.example.com/finetune"
+    api_key: ""
+
+# Correction settings
+correction:
+  enabled: false
+  endpoint: "https://api.example.com/v1/chat/completions"
+  api_key: ""
+  model: "gemini-2.0-flash"
+  system_prompt: |
+    You are a speech-to-text correction assistant. Fix transcription errors 
+    in the following text. Correct grammar, punctuation, and obvious 
+    misrecognitions while preserving the original meaning. Return only the 
+    corrected text without explanations.
+  max_tokens: 2048
+  temperature: 0.1
+
+# Clipboard integration
+clipboard:
+  auto_copy: true # Automatically copy transcription to clipboard
+  auto_paste: false # Automatically paste after transcription
+
+# System tray UI settings
+ui:
+  show_tray: true # Show system tray icon
+  show_notification: true # Show desktop notifications
+  overlay: false # Show recording overlay indicator
