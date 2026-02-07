@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from pathlib import Path
 
 import pyperclip
@@ -38,6 +37,19 @@ class WidgetApp:
             output_dir=self.config.recordings_dir,
         )
 
+        self._init_engine()
+        self._correction_enabled = self.config.get("correction.enabled", False)
+
+        self.widget = FloatingWidget(
+            on_toggle=self._toggle_recording,
+            on_settings=self._open_settings,
+            on_quit=self._cleanup,
+        )
+
+        self._recording = False
+
+    def _init_engine(self) -> None:
+        """Initialize or reinitialize the ASR engine from config."""
         self.engine = OnlineASREngine(
             endpoint=self.config.get("asr.online.endpoint", "https://api.groq.com/openai/v1/audio/transcriptions"),
             api_key=self.config.get("asr.online.api_key", ""),
@@ -46,25 +58,50 @@ class WidgetApp:
             timeout=self.config.get("asr.online.timeout", 60),
         )
 
-        self.widget = FloatingWidget(
-            on_toggle=self._toggle_recording,
-            on_quit=self._cleanup,
-        )
-
-        self._recording = False
-
     def run(self) -> None:
         """Start the widget application."""
+        print(f"[widget] API endpoint: {self.engine.endpoint}")
+        print(f"[widget] API key set: {'yes' if self.engine.api_key else 'NO'}")
+        print(f"[widget] Model: {self.engine.model}")
+        print(f"[widget] Correction: {'ON' if self._correction_enabled else 'OFF'}")
         if not self.engine.is_configured:
-            logger.warning(
-                "Online ASR not configured. Set API key via: "
-                "hola-audio config set asr.online.api_key YOUR_KEY"
-            )
-        logger.info("Starting floating widget...")
+            print("[widget] ⚠ WARNING: API key not configured! Right-click → Settings to set it.")
+        print("[widget] Starting... Click the blue circle to record.")
         self.widget.run()
+
+    # ── Settings ─────────────────────────────────────────────────────────
+
+    def _open_settings(self) -> None:
+        """Open the settings dialog."""
+        from hola_audio.ui.settings import SettingsDialog
+
+        SettingsDialog(
+            parent=self.widget.root,
+            api_key=self.config.get("asr.online.api_key", ""),
+            correction_enabled=self.config.get("correction.enabled", False),
+            correction_api_key=self.config.get("correction.api_key", ""),
+            correction_endpoint=self.config.get("correction.endpoint", ""),
+            correction_model=self.config.get("correction.model", "gemini-2.0-flash"),
+            on_save=self._save_settings,
+        )
+
+    def _save_settings(self, settings: dict) -> None:
+        """Save settings from dialog to config file."""
+        for key, value in settings.items():
+            self.config.set(key, value)
+        self.config.save()
+
+        # Reload engine with new API key
+        self._init_engine()
+        self._correction_enabled = self.config.get("correction.enabled", False)
+
+        print(f"[widget] Settings saved. API key: {'set' if self.engine.api_key else 'empty'}, Correction: {'ON' if self._correction_enabled else 'OFF'}")
+
+    # ── Recording ────────────────────────────────────────────────────────
 
     def _toggle_recording(self) -> None:
         """Toggle recording on/off."""
+        print(f"[widget] Toggle clicked. Currently recording: {self._recording}")
         if self._recording:
             self._stop_recording()
         else:
@@ -73,15 +110,14 @@ class WidgetApp:
     def _start_recording(self) -> None:
         """Start audio recording."""
         if not self.engine.is_configured:
-            self.widget.show_toast("⚠ Set API key first!", 3.0)
+            print("[widget] ⚠ API key not set! Right-click → Settings to configure.")
             return
 
         self._recording = True
         self.widget.set_state(WidgetState.RECORDING)
-
         self.capture.on_recording_stop = self._on_recording_complete_threadsafe
         self.capture.start()
-        logger.info("Recording started")
+        print("[widget] 🎙 Recording started...")
 
     def _on_recording_complete_threadsafe(self, audio_path: Path) -> None:
         """Called from audio thread — schedule on main thread."""
@@ -93,34 +129,73 @@ class WidgetApp:
             return
         self._recording = False
         self.widget.set_state(WidgetState.TRANSCRIBING)
+        print("[widget] ⏹ Recording stopped. Saving audio...")
         audio_path = self.capture.stop()
         if audio_path:
+            print(f"[widget] 📁 Audio saved: {audio_path}")
             self._on_recording_complete(audio_path)
         else:
+            print("[widget] ⚠ No audio frames captured!")
             self.widget.set_state(WidgetState.IDLE)
-            self.widget.show_toast("No audio captured", 2.0)
-        logger.info("Recording stopped")
 
     def _on_recording_complete(self, audio_path: Path) -> None:
         """Handle completed recording — transcribe in background."""
-        logger.info("Recording saved: %s", audio_path)
+        print("[widget] 🔄 Sending to Groq API for transcription...")
         thread = threading.Thread(target=self._transcribe, args=(audio_path,), daemon=True)
         thread.start()
 
+    # ── Transcription + Correction ───────────────────────────────────────
+
     def _transcribe(self, audio_path: Path) -> None:
-        """Transcribe audio file and copy result to clipboard."""
+        """Transcribe audio file, optionally correct, and copy to clipboard."""
         try:
             text = self.engine.transcribe(audio_path)
-            if text:
-                pyperclip.copy(text)
-                logger.info("Transcription copied: %s", text[:80])
-                self.widget.schedule(lambda: self._show_result(text))
-            else:
-                logger.warning("Empty transcription result")
+            if not text:
+                print("[widget] ⚠ Empty transcription result")
                 self.widget.schedule(lambda: self._show_result("(no speech detected)"))
-        except Exception:
-            logger.exception("Transcription failed")
+                return
+
+            print(f"[widget] ✅ Transcription: {text}")
+
+            # Apply AI correction if enabled
+            if self._correction_enabled:
+                text = self._apply_correction(text)
+
+            try:
+                pyperclip.copy(text)
+                print("[widget] 📋 Copied to clipboard")
+            except Exception:
+                print("[widget] ⚠ Clipboard not available (install xclip: sudo apt install xclip)")
+
+            self.widget.schedule(lambda: self._show_result(text))
+
+        except Exception as e:
+            print(f"[widget] ❌ Transcription failed: {e}")
+            import traceback
+            traceback.print_exc()
             self.widget.schedule(lambda: self._show_error())
+
+    def _apply_correction(self, text: str) -> str:
+        """Apply AI correction to transcribed text."""
+        try:
+            from hola_audio.correction.client import CorrectionClient
+
+            client = CorrectionClient(
+                endpoint=self.config.get("correction.endpoint", ""),
+                api_key=self.config.get("correction.api_key", ""),
+                model=self.config.get("correction.model", "gemini-2.0-flash"),
+            )
+            corrected = client.correct(text)
+            if corrected and corrected != text:
+                print(f"[widget] ✨ Corrected: {corrected}")
+                return corrected
+            print("[widget] ✨ Correction: no changes needed")
+            return text
+        except Exception as e:
+            print(f"[widget] ⚠ Correction failed: {e}, using original text")
+            return text
+
+    # ── UI Updates ───────────────────────────────────────────────────────
 
     def _show_result(self, text: str) -> None:
         """Show transcription result and return to idle."""
@@ -136,7 +211,7 @@ class WidgetApp:
         """Clean up resources."""
         if self._recording:
             self.capture.stop()
-        logger.info("Widget app stopped")
+        print("[widget] Widget app stopped")
 
     def _setup_logging(self) -> None:
         level_name = self.config.get("app.log_level", "INFO")
@@ -146,3 +221,4 @@ class WidgetApp:
             format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             datefmt="%H:%M:%S",
         )
+
