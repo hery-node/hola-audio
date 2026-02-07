@@ -2,6 +2,7 @@
 
 Usage:
     hola-audio start          Start the voice input service
+    hola-audio widget         Launch floating voice input widget
     hola-audio transcribe     Transcribe an audio file
     hola-audio correct        Correct text via LLM
     hola-audio finetune       Manage fine-tuning workflow
@@ -246,6 +247,16 @@ def _cmd_config(args: argparse.Namespace) -> None:
         print(f"Configuration saved to: {path}")
 
 
+def _cmd_widget(args: argparse.Namespace) -> None:
+    """Launch the floating voice input widget."""
+    from hola_audio.config import Config
+    from hola_audio.widget_app import WidgetApp
+
+    config = Config(args.config) if args.config else Config()
+    app = WidgetApp(config)
+    app.run()
+
+
 def main(argv: list[str] | None = None) -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -264,6 +275,9 @@ def main(argv: list[str] | None = None) -> None:
     mode_start = p_start.add_mutually_exclusive_group()
     mode_start.add_argument("--online", action="store_true", help="Use online ASR (cloud API)")
     mode_start.add_argument("--offline", action="store_true", help="Use offline ASR (local GPU)")
+
+    # -- widget ----------------------------------------------------------------
+    subparsers.add_parser("widget", help="Launch floating voice input widget (online mode)")
 
     # -- transcribe ------------------------------------------------------------
     p_trans = subparsers.add_parser("transcribe", help="Transcribe audio file(s)")
@@ -315,6 +329,7 @@ def main(argv: list[str] | None = None) -> None:
 
     cmd_map = {
         "start": _cmd_start,
+        "widget": _cmd_widget,
         "transcribe": _cmd_transcribe,
         "correct": _cmd_correct,
         "finetune": _cmd_finetune,
