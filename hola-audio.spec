@@ -28,6 +28,7 @@ a = Analysis(
         "hola_audio.audio.player",
         "hola_audio.asr",
         "hola_audio.asr.engine",
+        "hola_audio.asr.online_engine",
         "hola_audio.hotkey",
         "hola_audio.hotkey.manager",
         "hola_audio.finetune",

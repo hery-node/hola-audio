@@ -48,13 +48,16 @@ tray = [
 correction = [
     "openai>=1.0.0",
 ]
+online = [
+    "openai>=1.0.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "ruff>=0.1.0",
 ]
 all = [
-    "hola-audio[gpu,tray,correction,dev]",
+    "hola-audio[gpu,tray,correction,online,dev]",
 ]
 
 [project.scripts]

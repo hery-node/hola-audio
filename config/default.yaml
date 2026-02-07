@@ -22,13 +22,23 @@ hotkey:
 
 # ASR engine settings
 asr:
-  model_name: "nvidia/canary-qwen-2.5b" # HuggingFace model identifier
-  device: "auto" # auto, cuda, cpu
-  compute_type: "float16" # float16, float32, bfloat16
-  max_new_tokens: 512 # Maximum tokens for transcription
-  batch_size: 1 # Batch size for inference
-  beam_size: 1 # Beam search size (1 = greedy)
-  prompt: "Transcribe the following:"
+  mode: "online" # online (cloud API) or offline (local GPU)
+  # Online ASR settings (OpenAI-compatible — default: Groq, free tier)
+  online:
+    endpoint: "https://api.groq.com/openai/v1/audio/transcriptions"
+    api_key: "" # Set via config or HOLA_AUDIO__ASR__ONLINE__API_KEY env var
+    model: "whisper-large-v3" # Groq: whisper-large-v3 | OpenAI: whisper-1
+    language: "en" # ISO 639-1 code, empty = auto-detect
+    timeout: 60 # Request timeout in seconds
+  # Offline ASR settings (requires hola-audio[gpu])
+  offline:
+    model_name: "nvidia/canary-qwen-2.5b" # HuggingFace model identifier
+    device: "auto" # auto, cuda, cpu
+    compute_type: "float16" # float16, float32, bfloat16
+    max_new_tokens: 512 # Maximum tokens for transcription
+    batch_size: 1 # Batch size for inference
+    beam_size: 1 # Beam search size (1 = greedy)
+    prompt: "Transcribe the following:"
 
 # Fine-tuning settings
 finetune:

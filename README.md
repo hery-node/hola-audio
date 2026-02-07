@@ -1,12 +1,13 @@
 # Hola Audio
 
-**Cross-platform voice input application with offline speech recognition.**
+**Cross-platform voice input application with online and offline speech recognition.**
 
-Hola Audio provides a system-wide voice input tool that runs entirely offline using NVIDIA's [Canary-Qwen-2.5B](https://huggingface.co/nvidia/canary-qwen-2.5b) model. Press a hotkey, speak, and get your speech converted to text — no internet required.
+Hola Audio provides a system-wide voice input tool — press a hotkey, speak, and get your speech converted to text. Choose between **online mode** (lightweight, cloud-powered via Groq Whisper API — free!) or **offline mode** (fully local, GPU-accelerated via NVIDIA Canary-Qwen-2.5B).
 
 ## Features
 
-- **Offline Speech Recognition** — Local, GPU-accelerated ASR using Canary-Qwen-2.5B (state-of-the-art English STT)
+- **Online Speech Recognition** — Cloud-based ASR via Groq Whisper API (free tier, lightweight install)
+- **Offline Speech Recognition** — Local, GPU-accelerated ASR using Canary-Qwen-2.5B (no internet required)
 - **Global Hotkeys** — Customizable keyboard shortcuts to start/stop recording from any application
 - **Cross-Platform** — Works on Windows, Linux, and macOS
 - **Fine-Tuning** — Build a personal voice profile with guided recording sessions to improve accuracy
@@ -22,8 +23,12 @@ Hola Audio provides a system-wide voice input tool that runs entirely offline us
 ├──────────┬───────────┬───────────┬───────────────┤
 │  Hotkey  │   Audio   │    ASR    │  Correction   │
 │  Manager │  Capture  │  Engine   │   Client      │
-│ (pynput) │(sounddev) │  (NeMo)  │  (LLM API)    │
+│ (pynput) │(sounddev) │ Online/   │  (LLM API)    │
+│          │           │ Offline   │               │
 ├──────────┴───────────┴───────────┴───────────────┤
+│       Online: Groq / OpenAI Whisper API (requests)    │
+│       Offline: Canary-Qwen-2.5B (NeMo + GPU)     │
+├──────────────────────────────────────────────────┤
 │           Fine-tuning Pipeline                    │
 │     (Dataset collection + LoRA training)          │
 ├──────────────────────────────────────────────────┤
@@ -33,8 +38,16 @@ Hola Audio provides a system-wide voice input tool that runs entirely offline us
 
 ## Requirements
 
+**Online mode (default):**
+
 - **Python** 3.10+
-- **NVIDIA GPU** with CUDA support (for local ASR inference)
+- **Internet connection** + API key (e.g., OpenAI)
+- **System libraries**: PortAudio, libsndfile
+
+**Offline mode:**
+
+- **Python** 3.10+
+- **NVIDIA GPU** with CUDA support
   - Minimum: 6 GB VRAM (e.g., RTX 3060)
   - Recommended: 8+ GB VRAM (e.g., RTX 3070/4070+)
 - **System libraries**: PortAudio, libsndfile
@@ -58,6 +71,10 @@ python -m venv .venv
 source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate   # Windows
 
+# Online mode (lightweight — recommended for most users)
+pip install -e ".[tray,correction]"
+
+# Offline mode (requires NVIDIA GPU)
 pip install -e ".[gpu,tray,correction]"
 ```
 
@@ -83,19 +100,35 @@ brew install portaudio libsndfile
 
 **Windows:** No extra system packages needed — pip handles everything.
 
-### 2. Start the Service
+### 2. Configure (online mode)
+
+Set your API key (get a free one at [console.groq.com](https://console.groq.com)):
 
 ```bash
+hola-audio config set asr.online.api_key "gsk_your_groq_key"
+# Or via environment variable:
+export HOLA_AUDIO__ASR__ONLINE__API_KEY="gsk_your_groq_key"
+```
+
+### 3. Start the Service
+
+```bash
+# Online mode (default)
 hola-audio start
+
+# Or explicitly:
+hola-audio start --online    # Cloud-based ASR
+hola-audio start --offline   # Local GPU ASR (requires hola-audio[gpu])
 ```
 
 This will:
 
-- Load the Canary-Qwen-2.5B model (downloads ~5 GB on first run)
 - Register global hotkeys
 - Show a system tray icon
+- **Online**: Ready immediately (transcription via API)
+- **Offline**: Load the Canary-Qwen-2.5B model (downloads ~5 GB on first run)
 
-### 3. Use It
+### 4. Use It
 
 | Action            | Default Hotkey |
 | ----------------- | -------------- |
@@ -110,14 +143,18 @@ Press the recording hotkey, speak, press again — text appears in your clipboar
 ```bash
 # Start the voice input service
 hola-audio start
-hola-audio start --no-model    # Start without preloading model
+hola-audio start --online      # Use cloud API
+hola-audio start --offline     # Use local GPU
+hola-audio start --no-model    # Start without preloading model (offline)
 hola-audio start --no-tray     # Start without system tray
 
 # Transcribe audio files
 hola-audio transcribe recording.wav
+hola-audio transcribe recording.wav --online  # Force online mode
+hola-audio transcribe recording.wav --offline # Force offline mode
 hola-audio transcribe *.wav --correct         # With LLM correction
 hola-audio transcribe audio.wav --json        # JSON output
-hola-audio transcribe audio.wav --checkpoint model.nemo  # Use fine-tuned model
+hola-audio transcribe audio.wav --checkpoint model.nemo  # Use fine-tuned model (offline)
 
 # Correct text via LLM
 hola-audio correct --text "Uncorrected text here"
@@ -170,9 +207,16 @@ audio:
 
 # ASR engine
 asr:
-  model_name: "nvidia/canary-qwen-2.5b"
-  device: "auto" # auto, cuda, cpu
-  compute_type: "float16" # float16, float32, bfloat16
+  mode: "online" # online (cloud API) or offline (local GPU)
+  online:
+    endpoint: "https://api.groq.com/openai/v1/audio/transcriptions"
+    api_key: "your-api-key" # Free at console.groq.com
+    model: "whisper-large-v3"
+    language: "en"
+  offline:
+    model_name: "nvidia/canary-qwen-2.5b"
+    device: "auto" # auto, cuda, cpu
+    compute_type: "float16" # float16, float32, bfloat16
 
 # LLM correction (OpenAI-compatible endpoint)
 correction:
@@ -189,10 +233,18 @@ clipboard:
 ### Environment Variable Overrides
 
 ```bash
+# Online ASR
+export HOLA_AUDIO__ASR__MODE="online"
+export HOLA_AUDIO__ASR__ONLINE__API_KEY="gsk_..."
+
+# Offline ASR
+export HOLA_AUDIO__ASR__MODE="offline"
+export HOLA_AUDIO__ASR__OFFLINE__DEVICE="cuda"
+
+# Correction
 export HOLA_AUDIO__CORRECTION__ENDPOINT="https://api.example.com/v1/chat/completions"
 export HOLA_AUDIO__CORRECTION__API_KEY="sk-..."
 export HOLA_AUDIO__CORRECTION__ENABLED="true"
-export HOLA_AUDIO__ASR__DEVICE="cuda"
 ```
 
 ## Fine-Tuning Guide
@@ -262,7 +314,8 @@ hola-audio/
 │   │   ├── capture.py            # Cross-platform audio recording
 │   │   └── player.py             # Audio playback utilities
 │   ├── asr/
-│   │   └── engine.py             # Canary-Qwen-2.5B ASR engine
+│   │   ├── engine.py             # Offline ASR (Canary-Qwen-2.5B via NeMo)
+│   │   └── online_engine.py     # Online ASR (OpenAI Whisper API)
 │   ├── hotkey/
 │   │   └── manager.py            # Global hotkey management
 │   ├── finetune/
@@ -276,6 +329,7 @@ hola-audio/
 │   ├── test_config.py
 │   ├── test_audio.py
 │   ├── test_asr.py
+│   ├── test_online_asr.py
 │   ├── test_finetune.py
 │   └── test_correction.py
 ├── pyproject.toml

@@ -26,6 +26,7 @@ def _cmd_start(args: argparse.Namespace) -> None:
     from hola_audio.config import Config
 
     config = Config(args.config) if args.config else Config()
+    _apply_mode_override(config, args)
     app = Application(config)
 
     try:
@@ -33,7 +34,8 @@ def _cmd_start(args: argparse.Namespace) -> None:
             load_model=not args.no_model,
             enable_tray=not args.no_tray,
         )
-        print("Hola Audio is running. Press Ctrl+C to stop.")
+        mode = config.get('asr.mode', 'online')
+        print(f"Hola Audio is running ({mode} mode). Press Ctrl+C to stop.")
         print(f"  Toggle recording: {config.get('hotkey.toggle_recording')}")
         print(f"  Cancel recording: {config.get('hotkey.cancel_recording')}")
         print(f"  Correct clipboard: {config.get('hotkey.correct_clipboard')}")
@@ -44,16 +46,25 @@ def _cmd_start(args: argparse.Namespace) -> None:
         app.stop()
 
 
+def _apply_mode_override(config: "Config", args: argparse.Namespace) -> None:
+    """Apply --online/--offline CLI flag to config."""
+    if getattr(args, "online", False):
+        config.set("asr.mode", "online")
+    elif getattr(args, "offline", False):
+        config.set("asr.mode", "offline")
+
+
 def _cmd_transcribe(args: argparse.Namespace) -> None:
     """Transcribe an audio file."""
     from hola_audio.app import Application
     from hola_audio.config import Config
 
     config = Config(args.config) if args.config else Config()
+    _apply_mode_override(config, args)
     app = Application(config)
 
     # Load model synchronously for CLI use
-    app.engine.load(checkpoint_path=args.checkpoint)
+    app.engine.load(checkpoint_path=getattr(args, 'checkpoint', None))
 
     for audio_path in args.files:
         path = Path(audio_path)
@@ -155,11 +166,11 @@ def _cmd_finetune(args: argparse.Namespace) -> None:
             print(f"  Progress: {dataset.recorded_count}/{dataset.total}")
 
     elif args.action == "train":
-        mode = config.get("finetune.mode", args.mode or "offline")
+        mode = args.mode or config.get("finetune.mode", "offline")
 
         if mode == "offline":
             trainer = OfflineTrainer(
-                model_name=config.get("asr.model_name", "nvidia/canary-qwen-2.5b"),
+                model_name=config.get("asr.offline.model_name", "nvidia/canary-qwen-2.5b"),
                 output_dir=config.finetune_dir / "checkpoints",
                 learning_rate=config.get("finetune.offline.learning_rate", 1e-4),
                 num_epochs=config.get("finetune.offline.num_epochs", 5),
@@ -250,12 +261,18 @@ def main(argv: list[str] | None = None) -> None:
     p_start = subparsers.add_parser("start", help="Start the voice input service")
     p_start.add_argument("--no-model", action="store_true", help="Don't preload the ASR model")
     p_start.add_argument("--no-tray", action="store_true", help="Disable system tray icon")
+    mode_start = p_start.add_mutually_exclusive_group()
+    mode_start.add_argument("--online", action="store_true", help="Use online ASR (cloud API)")
+    mode_start.add_argument("--offline", action="store_true", help="Use offline ASR (local GPU)")
 
     # -- transcribe ------------------------------------------------------------
     p_trans = subparsers.add_parser("transcribe", help="Transcribe audio file(s)")
     p_trans.add_argument("files", nargs="+", help="Audio file(s) to transcribe")
     p_trans.add_argument("--correct", action="store_true", help="Apply LLM correction")
-    p_trans.add_argument("--checkpoint", help="Path to fine-tuned checkpoint")
+    p_trans.add_argument("--checkpoint", help="Path to fine-tuned checkpoint (offline mode)")
+    mode_trans = p_trans.add_mutually_exclusive_group()
+    mode_trans.add_argument("--online", action="store_true", help="Use online ASR (cloud API)")
+    mode_trans.add_argument("--offline", action="store_true", help="Use offline ASR (local GPU)")
     p_trans.add_argument("--json", action="store_true", help="Output as JSON")
 
     # -- correct ---------------------------------------------------------------

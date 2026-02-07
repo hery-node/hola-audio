@@ -14,7 +14,6 @@ from typing import Any
 
 import pyperclip
 
-from hola_audio.asr.engine import ASREngine
 from hola_audio.audio.capture import AudioCapture
 from hola_audio.config import Config
 from hola_audio.correction.client import CorrectionClient
@@ -41,14 +40,7 @@ class Application:
             output_dir=self.config.recordings_dir,
         )
 
-        self.engine = ASREngine(
-            model_name=self.config.get("asr.model_name", "nvidia/canary-qwen-2.5b"),
-            device=self.config.get("asr.device", "auto"),
-            compute_type=self.config.get("asr.compute_type", "float16"),
-            max_new_tokens=self.config.get("asr.max_new_tokens", 512),
-            beam_size=self.config.get("asr.beam_size", 1),
-            prompt=self.config.get("asr.prompt", "Transcribe the following:"),
-        )
+        self.engine = self._create_engine()
 
         self.correction = CorrectionClient(
             endpoint=self.config.get("correction.endpoint", ""),
@@ -243,6 +235,33 @@ class Application:
             logger.exception("Processing recording failed")
             if self._tray:
                 self._tray.notify("Hola Audio", "Transcription failed. Check logs.")
+
+    def _create_engine(self) -> Any:
+        """Create the ASR engine based on config mode (online or offline)."""
+        mode = self.config.get("asr.mode", "online")
+        logger.info("ASR mode: %s", mode)
+
+        if mode == "offline":
+            from hola_audio.asr.engine import ASREngine
+
+            return ASREngine(
+                model_name=self.config.get("asr.offline.model_name", "nvidia/canary-qwen-2.5b"),
+                device=self.config.get("asr.offline.device", "auto"),
+                compute_type=self.config.get("asr.offline.compute_type", "float16"),
+                max_new_tokens=self.config.get("asr.offline.max_new_tokens", 512),
+                beam_size=self.config.get("asr.offline.beam_size", 1),
+                prompt=self.config.get("asr.offline.prompt", "Transcribe the following:"),
+            )
+
+        from hola_audio.asr.online_engine import OnlineASREngine
+
+        return OnlineASREngine(
+            endpoint=self.config.get("asr.online.endpoint", "https://api.groq.com/openai/v1/audio/transcriptions"),
+            api_key=self.config.get("asr.online.api_key", ""),
+            model=self.config.get("asr.online.model", "whisper-large-v3"),
+            language=self.config.get("asr.online.language", "en"),
+            timeout=self.config.get("asr.online.timeout", 60),
+        )
 
     def _setup_logging(self) -> None:
         level_name = self.config.get("app.log_level", "INFO")
